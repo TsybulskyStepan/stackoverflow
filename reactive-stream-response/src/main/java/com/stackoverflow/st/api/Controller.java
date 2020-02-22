@@ -4,7 +4,12 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.ApplicationArguments;
+import org.springframework.boot.ApplicationRunner;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.scheduling.annotation.Async;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -18,10 +23,11 @@ import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 import static org.springframework.http.MediaType.APPLICATION_JSON_VALUE;
+import static reactor.core.scheduler.Schedulers.elastic;
 
 @Slf4j
 @RestController
-public class Controller {
+public class Controller implements ApplicationRunner {
 
     private final WebClient webClient = WebClient.create("http://localhost:8080/call");
 
@@ -76,7 +82,32 @@ public class Controller {
     public Mono<MyClass> counter() {
         return Mono
                 .just(new MyClass(counter.incrementAndGet()))
-                .delayElement(Duration.ofSeconds(1)); // emulate response time
+                .delayElement(Duration.ofSeconds(2)); // emulate response time
+    }
+
+    @Async
+    @Scheduled(cron = "")
+    public void run(ApplicationArguments args) {
+        Flux<ResponseEntity<Void>> externalCall = Flux
+                .range(1, 5)
+                .parallel()
+                .runOn(elastic())
+                .flatMap(i -> {
+                    log.info("Call external service {}", i);
+                    return webClient.get().retrieve().toBodilessEntity();
+                })
+                .sequential();
+
+        Flux
+                .from(externalCall)
+                .thenMany(Flux.defer(
+                        () -> {
+                            log.info("First execution completed. Call external service one more time");
+                            return externalCall;
+                        })
+                )
+                .last()
+                .subscribe(i -> log.info("Execution completed"));
     }
 
     @Data

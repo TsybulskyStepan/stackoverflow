@@ -11,6 +11,7 @@
   <modules>
     <module>reactive-stream-response</module>
     <module>flux-take-until-other</module>
+    <module>async-scheduled-call-external-service</module>
   </modules>
   
   <properties>
